@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Christmas Magic: Camera Control</title>
+    <style>
+        :root {
+            --primary: #00f2ff;
+            --glass: rgba(15, 23, 42, 0.75); /* Darker glass */
+            --border: rgba(255, 255, 255, 0.2);
+            --danger: #ff0055;
+            --success: #00ff88;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0b1026;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            color: white;
+        }
+
+        /* --- UI Layout --- */
+        #ui-container {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Control Panel */
+        .panel {
+            pointer-events: auto;
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            width: 290px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            transition: 0.3s;
+        }
+
+        .panel h2 {
+            margin: 0 0 15px 0;
+            font-size: 1.1rem;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Mode Toggles */
+        .mode-row {
+            display: flex;
+            background: rgba(0,0,0,0.4);
+            border-radius: 8px;
+            padding: 4px;
+            margin-bottom: 15px;
+        }
+        .mode-btn {
+            flex: 1;
+            text-align: center;
+            padding: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: 0.3s;
+            color: #aaa;
+        }
+        .mode-btn.active {
+            background: var(--primary);
+            color: #000;
+            font-weight: bold;
+            box-shadow: 0 0 15px rgba(0, 242, 255, 0.3);
+        }
+
+        /* Shape Buttons */
+        .shape-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .shape-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.85rem;
+        }
+        .shape-btn:hover { background: rgba(255,255,255,0.15); border-color: white; }
+        .shape-btn.active-shape { border-color: var(--primary); color: var(--primary); background: rgba(0, 242, 255, 0.1); }
+
+        /* Camera Box & Toggle */
+        .camera-box {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 12px;
+            margin-top: 15px;
+            overflow: hidden;
+            border: 1px solid #444;
+        }
+        
+        #video-feed {
+            width: 100%; height: 100%; object-fit: cover;
+            transform: scaleX(-1); opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+        
+        #canvas-output {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            transform: scaleX(-1);
+        }
+
+        /* New Camera Toggle Button */
+        #btn-cam-toggle {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.6);
+            color: var(--success);
+            border: 1px solid var(--success);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: 0.3s;
+        }
+        #btn-cam-toggle.off {
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+        #btn-cam-toggle:hover {
+            transform: scale(1.05);
+            background: rgba(0,0,0,0.8);
+        }
+
+        .cam-overlay-msg {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #666;
+            font-size: 0.9rem;
+            text-align: center;
+            display: none; /* Hidden by default */
+        }
+
+        .hand-status {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            font-size: 0.75rem; color: #fff; background: rgba(0,0,0,0.7);
+            padding: 5px; text-align: center;
+            box-sizing: border-box;
+        }
+
+        /* Bottom Controls */
+        .bottom-bar {
+            align-self: center;
+            pointer-events: auto;
+        }
+        .upload-btn {
+            background: linear-gradient(135deg, var(--primary), #00aaff);
+            color: #000;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
+            transition: 0.3s;
+            display: inline-block;
+        }
+        .upload-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(0, 242, 255, 0.6); }
+
+        #loading {
+            position: fixed; inset: 0; background: #000; z-index: 100;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            font-size: 1.5rem; color: var(--primary); letter-spacing: 4px;
+        }
+        .loading-bar {
+            width: 200px; height: 2px; background: #333; margin-top: 20px;
+            position: relative; overflow: hidden;
+        }
+        .loading-bar::after {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 50%;
+            background: var(--primary); animation: load 1s infinite linear;
+        }
+        @keyframes load { 0% {left: -50%;} 100% {left: 100%;} }
+    </style>
+
+    <!-- Libraries -->
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body>
+
+    <div id="loading">
+        SYSTEM LOADING
+        <div class="loading-bar"></div>
+    </div>
+
+    <div id="ui-container">
+        <div class="panel">
+            <h2>Holo-Control</h2>
+            
+            <div class="mode-row">
+                <div id="btn-mouse" class="mode-btn active" onclick="setMode('MOUSE')">🖱️ 鼠标</div>
+                <div id="btn-hand" class="mode-btn" onclick="setMode('HAND')">🖐️ 手势</div>
+            </div>
+
+            <div class="shape-grid">
+                <button class="shape-btn active-shape" onclick="morph('TREE')">🎄 圣诞树</button>
+                <button class="shape-btn" onclick="morph('DNA')">🧬 DNA双螺旋</button>
+                <button class="shape-btn" onclick="morph('GALAXY')">🌌 银河</button>
+                <button class="shape-btn" onclick="morph('SPHERE')">🔮 星球/照片</button>
+            </div>
+
+            <div class="camera-box">
+                <!-- Camera Toggle Button -->
+                <button id="btn-cam-toggle" onclick="toggleCamera()">
+                    <span id="cam-icon">●</span> <span id="cam-text">摄像头: 开</span>
+                </button>
+                
+                <div class="cam-overlay-msg" id="cam-off-msg">摄像头已关闭<br>Camera Off</div>
+                
+                <video id="video-feed" playsinline></video>
+                <canvas id="canvas-output"></canvas>
+                <div id="hand-msg" class="hand-status">等待初始化...</div>
+            </div>
+            
+            <div style="font-size: 0.75rem; color: #889; margin-top: 8px; line-height: 1.4;">
+                ✊握拳=树 | ✌️耶=DNA<br>☝️单指=银河 | 🖐张开=星球
+            </div>
+        </div>
+
+        <div class="bottom-bar">
+            <label class="upload-btn">
+                📷 上传照片 (Upload)
+                <input type="file" id="file-input" multiple accept="image/*" style="display:none">
+            </label>
+        </div>
+    </div>
+
+    <div id="canvas-3d"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- Config ---
+        const CONFIG = { count: 1800, colors: [0x00f2ff, 0xff0055, 0xffffff, 0xffee00, 0xaa00ff] };
+        
+        const STATE = {
+            mode: 'MOUSE',
+            shape: 'TREE',
+            handDetected: false,
+            cameraEnabled: true
+        };
+
+        let scene, camera, renderer, composer, controls;
+        let particles, dnaLines, photoGroup;
+        let particleData = [];
+        let dummy = new THREE.Object3D();
+        const clock = new THREE.Clock();
+        
+        // MediaPipe Global Vars
+        let cameraUtils = null; // Store instance to control it
+        let handsMesh = null;
+
+        // --- Init ---
+        function init() {
+            // 1. Setup Scene
+            scene = new THREE.Scene();
+            scene.background = createSkyTexture();
+            scene.fog = new THREE.FogExp2(0x0b1026, 0.012);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 45);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            document.getElementById('canvas-3d').appendChild(renderer.domElement);
+
+            // 2. Lights
+            const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambient);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+            const blueLight = new THREE.PointLight(0x0088ff, 2, 50);
+            blueLight.position.set(-10, 5, -10);
+            scene.add(blueLight);
+
+            // 3. Post Processing
+            const renderPass = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.2; bloomPass.strength = 0.8; bloomPass.radius = 0.5;
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderPass);
+            composer.addPass(bloomPass);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+            // 4. Content
+            createParticles();
+            createDnaLines();
+            photoGroup = new THREE.Group();
+            scene.add(photoGroup);
+
+            // 5. Events
+            window.addEventListener('resize', onResize);
+            document.getElementById('file-input').addEventListener('change', handleUpload);
+
+            // Start
+            animate();
+            initHandTracking();
+
+            setTimeout(() => {
+                document.getElementById('loading').style.opacity = 0;
+                setTimeout(() => document.getElementById('loading').remove(), 1000);
+            }, 1500);
+        }
+
+        function createSkyTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(256, 256, 0, 256, 256, 512);
+            grad.addColorStop(0, '#1a2a4a'); grad.addColorStop(1, '#050510');
+            ctx.fillStyle = grad; ctx.fillRect(0,0,512,512);
+            ctx.fillStyle = '#FFF';
+            for(let i=0; i<300; i++) {
+                const r = Math.random()*1.5;
+                ctx.beginPath(); ctx.arc(Math.random()*512, Math.random()*512, r, 0, Math.PI*2); ctx.fill();
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            return tex;
+        }
+
+        // --- Particles ---
+        function createParticles() {
+            const geo = new THREE.SphereGeometry(0.15, 8, 8);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.8 });
+            particles = new THREE.InstancedMesh(geo, mat, CONFIG.count);
+            scene.add(particles);
+
+            for (let i = 0; i < CONFIG.count; i++) {
+                // Tree
+                const p = i / CONFIG.count;
+                const tH = p * 20 - 10;
+                const tR = (1 - p) * 8;
+                const tAng = p * Math.PI * 25;
+                const treePos = new THREE.Vector3(Math.cos(tAng)*tR, tH, Math.sin(tAng)*tR);
+
+                // DNA (Fix: Real Double Helix)
+                const isStrandA = i % 2 === 0;
+                const dnaIdx = Math.floor(i / 2);
+                const dnaProg = dnaIdx / (CONFIG.count / 2);
+                const dnaY = dnaProg * 24 - 12;
+                const dnaAng = dnaProg * Math.PI * 8;
+                const dnaRad = 3.5;
+                const phase = isStrandA ? 0 : Math.PI;
+                const dnaPos = new THREE.Vector3(Math.cos(dnaAng + phase)*dnaRad, dnaY, Math.sin(dnaAng + phase)*dnaRad);
+
+                // Galaxy
+                const gAng = i * 0.1;
+                const gRad = i * 0.015 * 5;
+                const galaxyPos = new THREE.Vector3(Math.cos(gAng)*gRad, (Math.random()-0.5)*1, Math.sin(gAng)*gRad);
+
+                // Sphere
+                const phi = Math.acos(-1 + (2 * i) / CONFIG.count);
+                const theta = Math.sqrt(CONFIG.count * Math.PI) * phi;
+                const sR = 12;
+                const spherePos = new THREE.Vector3(sR*Math.cos(theta)*Math.sin(phi), sR*Math.sin(theta)*Math.sin(phi), sR*Math.cos(phi));
+
+                const col = new THREE.Color(CONFIG.colors[Math.floor(Math.random()*CONFIG.colors.length)]);
+                particles.setColorAt(i, col);
+
+                particleData.push({
+                    currentPos: treePos.clone(),
+                    treePos, dnaPos, galaxyPos, spherePos,
+                    offset: Math.random() * 10
+                });
+            }
+        }
+
+        // --- DNA Lines (The connection) ---
+        function createDnaLines() {
+            const pairCount = Math.floor(CONFIG.count / 2);
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(pairCount * 6);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const material = new THREE.LineBasicMaterial({ color: 0x00f2ff, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending });
+            dnaLines = new THREE.LineSegments(geometry, material);
+            scene.add(dnaLines);
+        }
+
+        function updateDnaLines() {
+            dnaLines.visible = (STATE.shape === 'DNA');
+            if (!dnaLines.visible) return;
+            const posAttr = dnaLines.geometry.attributes.position;
+            for (let i = 0; i < CONFIG.count; i += 2) {
+                const p1 = particleData[i].currentPos;
+                const p2 = particleData[i+1].currentPos;
+                const idx = (i / 2) * 6;
+                posAttr.array[idx] = p1.x; posAttr.array[idx+1] = p1.y; posAttr.array[idx+2] = p1.z;
+                posAttr.array[idx+3] = p2.x; posAttr.array[idx+4] = p2.y; posAttr.array[idx+5] = p2.z;
+            }
+            posAttr.needsUpdate = true;
+        }
+
+        // --- Photo System ---
+        function handleUpload(e) {
+            const files = e.target.files;
+            if(!files.length) return;
+            morph('SPHERE');
+            const loader = new THREE.TextureLoader();
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img = new Image();
+                    img.src = ev.target.result;
+                    img.onload = () => {
+                        const tex = new THREE.Texture(img);
+                        tex.colorSpace = THREE.SRGBColorSpace;
+                        tex.needsUpdate = true;
+                        addPhoto(tex, img.width/img.height);
+                    };
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function addPhoto(tex, aspect) {
+            const w = 4;
+            const h = w / aspect;
+            const mat = new THREE.MeshStandardMaterial({ 
+                map: tex, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.1, color: 0xffffff 
+            });
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+            mesh.position.set((Math.random()-0.5)*15, (Math.random()-0.5)*15, (Math.random()-0.5)*15);
+            mesh.rotation.set(Math.random(), Math.random(), 0);
+            photoGroup.add(mesh);
+            mesh.scale.set(0,0,0);
+            gsap.to(mesh.scale, {x:1, y:1, z:1, duration: 1, ease: "back.out"});
+        }
+
+        // --- Interaction ---
+        window.setMode = (mode) => {
+            STATE.mode = mode;
+            document.getElementById('btn-mouse').className = mode === 'MOUSE' ? 'mode-btn active' : 'mode-btn';
+            document.getElementById('btn-hand').className = mode === 'HAND' ? 'mode-btn active' : 'mode-btn';
+            controls.enabled = (mode === 'MOUSE');
+        };
+
+        window.morph = (shape) => {
+            if(STATE.shape === shape) return;
+            STATE.shape = shape;
+            
+            // Visual feedback on buttons
+            document.querySelectorAll('.shape-btn').forEach(btn => {
+                if(btn.innerText.includes(shape === 'TREE' ? '树' : shape === 'DNA' ? 'DNA' : shape === 'GALAXY' ? '银河' : '星球')) {
+                    btn.classList.add('active-shape');
+                } else {
+                    btn.classList.remove('active-shape');
+                }
+            });
+
+            const duration = 1.5;
+            particleData.forEach(p => {
+                let target = p.treePos;
+                if(shape === 'DNA') target = p.dnaPos;
+                else if(shape === 'GALAXY') target = p.galaxyPos;
+                else if(shape === 'SPHERE') target = p.spherePos;
+                gsap.to(p.currentPos, { x: target.x, y: target.y, z: target.z, duration: duration + Math.random(), ease: "power2.inOut" });
+            });
+            
+            if(shape === 'SPHERE' || shape === 'GALAXY') gsap.to(photoGroup.scale, {x:1, y:1, z:1, duration: 1});
+            else gsap.to(photoGroup.scale, {x:0.01, y:0.01, z:0.01, duration: 1});
+        };
+
+        // --- Camera Toggle Logic ---
+        window.toggleCamera = () => {
+            const btn = document.getElementById('btn-cam-toggle');
+            const icon = document.getElementById('cam-icon');
+            const text = document.getElementById('cam-text');
+            const msg = document.getElementById('cam-off-msg');
+            const video = document.getElementById('video-feed');
+            const canvas = document.getElementById('canvas-output');
+            const handMsg = document.getElementById('hand-msg');
+
+            if(STATE.cameraEnabled) {
+                // TURN OFF
+                STATE.cameraEnabled = false;
+                if(cameraUtils) cameraUtils.stop(); // Stop loop
+                
+                // Stop tracks to turn off hardware light
+                const stream = video.srcObject;
+                if(stream) stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                
+                // UI Update
+                btn.classList.add('off');
+                icon.innerText = "✖";
+                text.innerText = "摄像头: 关";
+                msg.style.display = "block";
+                video.style.opacity = 0;
+                
+                // Clear Hand Canvas
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0,0,canvas.width, canvas.height);
+                handMsg.innerText = "已停止监测";
+                STATE.handDetected = false;
+
+            } else {
+                // TURN ON
+                STATE.cameraEnabled = true;
+                if(cameraUtils) cameraUtils.start(); // Restart
+                
+                // UI Update
+                btn.classList.remove('off');
+                icon.innerText = "●";
+                text.innerText = "摄像头: 开";
+                msg.style.display = "none";
+                video.style.opacity = 0.8;
+                handMsg.innerText = "正在启动...";
+            }
+        };
+
+        // --- Animation ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            for (let i = 0; i < CONFIG.count; i++) {
+                const p = particleData[i];
+                dummy.position.copy(p.currentPos);
+                
+                if (STATE.shape === 'DNA') {
+                    const r = Math.sqrt(p.currentPos.x**2 + p.currentPos.z**2);
+                    const ang = Math.atan2(p.currentPos.z, p.currentPos.x) + 0.005; 
+                    dummy.position.x = Math.cos(ang) * r;
+                    dummy.position.z = Math.sin(ang) * r;
+                    p.currentPos.x = dummy.position.x;
+                    p.currentPos.z = dummy.position.z;
+                } else {
+                    dummy.position.y += Math.sin(time * 2 + p.offset) * 0.02;
+                }
+
+                dummy.updateMatrix();
+                particles.setMatrixAt(i, dummy.matrix);
+            }
+            particles.instanceMatrix.needsUpdate = true;
+            updateDnaLines();
+
+            if (STATE.mode === 'MOUSE') controls.update();
+            composer.render();
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Hand Tracking ---
+        function initHandTracking() {
+            const video = document.getElementById('video-feed');
+            const canvas = document.getElementById('canvas-output');
+            const ctx = canvas.getContext('2d');
+            const msg = document.getElementById('hand-msg');
+
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+
+            hands.onResults(results => {
+                if(!STATE.cameraEnabled) return; // Skip if off
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    STATE.handDetected = true;
+                    msg.style.color = '#00f2ff';
+                    msg.innerText = "手势已捕获";
+                    const lm = results.multiHandLandmarks[0];
+                    drawConnectors(ctx, lm, HAND_CONNECTIONS, {color: '#00f2ff', lineWidth: 2});
+                    drawLandmarks(ctx, lm, {color: '#ff0055', lineWidth: 1});
+                    if(STATE.mode === 'HAND') processGestures(lm);
+                } else {
+                    STATE.handDetected = false;
+                    msg.style.color = '#fff';
+                    msg.innerText = "寻找手部...";
+                }
+            });
+
+            cameraUtils = new Camera(video, {
+                onFrame: async () => { 
+                    if(STATE.cameraEnabled) await hands.send({image: video}); 
+                },
+                width: 320, height: 240
+            });
+            
+            cameraUtils.start(); // Auto start by default
+        }
+
+        let lastGesture = '';
+        let frameCount = 0;
+        function processGestures(lm) {
+            frameCount++; if(frameCount % 5 !== 0) return;
+
+            const isExtended = (tip, pip) => {
+                return Math.hypot(lm[tip].x - lm[0].x, lm[tip].y - lm[0].y) > 
+                       Math.hypot(lm[pip].x - lm[0].x, lm[pip].y - lm[0].y);
+            };
+            const count = [isExtended(8,6), isExtended(12,10), isExtended(16,14), isExtended(20,18)].filter(Boolean).length;
+            const indexOnly = isExtended(8,6) && !isExtended(12,10);
+            const peace = isExtended(8,6) && isExtended(12,10) && !isExtended(16,14);
+
+            let gesture = '';
+            if (count === 4) gesture = 'OPEN';
+            else if (count === 0) gesture = 'FIST';
+            else if (peace) gesture = 'TWO';
+            else if (indexOnly) gesture = 'ONE';
+
+            if (gesture && gesture !== lastGesture) {
+                lastGesture = gesture;
+                if(gesture === 'OPEN') morph('SPHERE');
+                if(gesture === 'FIST') morph('TREE');
+                if(gesture === 'ONE') morph('GALAXY');
+                if(gesture === 'TWO') morph('DNA');
+            }
+
+            const cx = lm[9].x - 0.5;
+            scene.rotation.y += -cx * 0.08;
+        }
+
+        init();
+    </script>
+</body>
+</html>
